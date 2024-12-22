@@ -25,6 +25,7 @@ This project is a Python-based SQL Database Management System that allows users 
 Ensure you have the following installed:
 - Python 3.x
 - MySQL or any other database you plan to use
+- Recommended to have XAMP software installed and Apache, MySQL modules on "run" state.
 - Required Python libraries: `mysql-connector-python` (or equivalent library based on your database).
 
 ## Setup Instructions
