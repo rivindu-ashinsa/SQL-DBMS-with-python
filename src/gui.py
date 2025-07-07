@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import mariadb
-
+from dbms.connection import get_connection
 class SimpleSQLGui(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -22,7 +22,7 @@ class SimpleSQLGui(tk.Tk):
 
         style.configure("TLabel", background="#1e1e1e", foreground="#ffffff")
         style.configure("TEntry", fieldbackground="#2e2e2e", foreground="#ffffff")
-        style.configure("TButton", background="#444", foreground="#ffffff")
+        style.configure("TButton", background="#444", foreground="#a99292")
         style.configure("TLabelframe", background="#1e1e1e", foreground="#ffffff")
         style.configure("TLabelframe.Label", background="#1e1e1e", foreground="#ffffff")
         style.configure("Treeview", background="#2e2e2e", fieldbackground="#2e2e2e", foreground="#ffffff")
@@ -82,7 +82,7 @@ class SimpleSQLGui(tk.Tk):
         pw = self.pw_entry.get()
         db = self.db_entry.get()
         try:
-            self.conn = mariadb.connect(
+            self.conn = get_connection(
                 host=host,
                 user=user,
                 password=pw,
@@ -92,6 +92,7 @@ class SimpleSQLGui(tk.Tk):
             self.status.config(text=f"Connected to {db} as {user}@{host}.")
             self.conn_btn.config(state=tk.DISABLED)
             self.run_btn.config(state=tk.NORMAL)
+            
         except mariadb.Error as e:
             messagebox.showerror("Connection Error", str(e))
             self.status.config(text="Connection failed.")
