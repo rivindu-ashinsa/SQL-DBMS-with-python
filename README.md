@@ -1,6 +1,6 @@
 # SQL Database Management System in Python
 
-A simple, interactive SQL Database Management System implemented in Python. This tool allows users to create, manage, and manipulate SQL databases and tables through a command-line interface, supporting both Data Definition Language (DDL) and Data Manipulation Language (DML) operations. The system is compatible with MySQL/MariaDB databases and is designed to be beginner-friendly, making it easier to experiment with SQL database operations in a controlled environment.
+A local SQL database workbench built with Python and Kivy. The application provides a polished desktop UI for managing MariaDB/MySQL-style databases on your machine, including database creation, table creation, row inserts, updates, deletes, and custom SQL execution.
 
 ---
 
@@ -8,25 +8,26 @@ A simple, interactive SQL Database Management System implemented in Python. This
 
 ### Data Definition Language (DDL)
 - Create a new database.
-- Create a new table.
-- Delete existing tables.
-- Execute custom SQL queries.
+- Create a new table from SQL column definitions.
+- Drop existing tables.
 
 ### Data Manipulation Language (DML)
-- View data from tables.
-- Insert new records into tables.
-- Delete records from tables.
-- Update existing records.
-- Execute custom SQL queries.
+- Browse rows from a table.
+- Insert new records with `column=value` pairs.
+- Update existing rows by key column.
+- Delete rows by key column.
+
+### SQL Console
+- Run custom SQL statements and inspect tabular results in-app.
 
 ---
 
 ## Prerequisites
 
-- Python 3.x
-- MySQL or MariaDB (recommended for local development)
-- [XAMPP](https://www.apachefriends.org/index.html) (recommended) with MySQL server running
-- Required Python library: `mysql-connector-python` or `mariadb` (depending on your setup)
+- Python 3.12+ recommended
+- MySQL or MariaDB running locally
+- Kivy for the desktop UI
+- Python libraries: `kivy`, `mariadb`, `python-dotenv`
 
 ---
 
@@ -44,9 +45,7 @@ A simple, interactive SQL Database Management System implemented in Python. This
 
 3. **Install dependencies:**
    ```bash
-   pip install mariadb tabulate
-   # or, if you use MySQL:
-   pip install mysql-connector-python tabulate
+   pip install -r requirements.txt
    ```
 
 4. **Database Credentials:**
@@ -58,13 +57,15 @@ A simple, interactive SQL Database Management System implemented in Python. This
 ## Running the Application
 
 1. **Ensure your database server (MySQL/MariaDB) is running.**
-2. **Start the main interface:**
+2. **Start the Kivy dashboard:**
    ```bash
-   python MainInterface.py
+   python src/main.py
    ```
-3. **Follow the on-screen menu options to:**
-   - Choose between DDL or DML operations.
-   - Perform actions such as creating/deleting tables, inserting/updating/deleting/querying data, or running custom SQL.
+3. **Use the sidebar to move between:**
+   - Connection setup.
+   - DDL tools for databases and tables.
+   - DML tools for inserts, updates, deletes, and browsing.
+   - The SQL console for custom queries.
 
 ---
 
@@ -72,29 +73,29 @@ A simple, interactive SQL Database Management System implemented in Python. This
 
 ```
 SQL-DBMS-with-python/
-├── MainInterface.py   # Main menu and program logic
-├── sql_ddl.py        # DDL operations (CREATE, DROP, custom queries)
-├── sql_dml.py        # DML operations (SELECT, INSERT, UPDATE, DELETE, custom queries)
 ├── README.md
-└── (other supporting files)
+├── requirements.txt
+└── src/
+   ├── main.py        # Kivy launcher
+   ├── gui.py         # Kivy dashboard UI
+   └── dbms/          # Reusable database operations
 ```
 
 ---
 
 ## Usage
 
-- Start the program by running `python MainInterface.py`.
-- Use the interactive menu to select DDL or DML operations.
-- Enter information as prompted.
-- Custom SQL queries can also be run from within the interface.
+- Start the app with `python src/main.py`.
+- Connect to the local database server first.
+- Use the DDL and DML screens for common workflows, or the SQL console for raw statements.
 
 ---
 
 ## Notes
 
-- The interface uses simple loading animations to enhance user experience.
-- Make sure your database server is running and accessible before launching the application.
-- The default setup uses no password for the database root user; for production or shared environments, change this to a more secure configuration.
+- The UI is designed for local development and assumes a MariaDB/MySQL-compatible server is already running.
+- Connection defaults are loaded from `.env` if present.
+- The old terminal-based interface files were removed in favor of the Kivy dashboard.
 
 ---
 
