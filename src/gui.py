@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Iterable
 
 import mariadb
@@ -19,7 +20,7 @@ from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 
 from dbms.connection import get_connection
-from dbms.ddl import create_database, create_table, drop_table, list_tables
+from dbms.ddl import create_database, create_table, drop_table, list_databases, list_tables
 from dbms.dml import delete_row, execute_sql, fetch_rows, insert_row, update_row
 
 
@@ -32,6 +33,24 @@ ACCENT_SOFT = (0.17, 0.75, 0.58, 0.14)
 TEXT = (0.96, 0.98, 1, 1)
 MUTED = (0.67, 0.72, 0.8, 1)
 ERROR = (0.95, 0.35, 0.35, 1)
+
+TYPE_OPTIONS = (
+    "INT",
+    "BIGINT",
+    "SMALLINT",
+    "VARCHAR",
+    "TEXT",
+    "DATE",
+    "DATETIME",
+    "TIMESTAMP",
+    "DECIMAL",
+    "FLOAT",
+    "DOUBLE",
+    "BOOLEAN",
+)
+
+SIZE_RECOMMENDED_TYPES = {"VARCHAR", "DECIMAL", "CHAR"}
+IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def parse_key_value_lines(raw_text: str) -> dict[str, str]:
@@ -276,13 +295,38 @@ class DashboardScreen(BaseScreen):
         card.add_widget(self.action_button("Connect", self.connect))
         self.content.add_widget(card)
 
+        overview = self.section_card("Database Overview", "All databases visible from this local server.")
+        self.active_database_label = Label(
+            text="Active database: (none)",
+            color=TEXT,
+            bold=True,
+            size_hint_y=None,
+            height=dp(22),
+            halign="left",
+            valign="middle",
+        )
+        self.active_database_label.bind(size=lambda instance, value: setattr(instance, "text_size", value))
+        overview.add_widget(self.active_database_label)
+
+        self.database_scroll = ScrollView(do_scroll_x=False, do_scroll_y=True, size_hint_y=None, height=dp(190))
+        self.database_grid = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.database_grid.bind(minimum_height=self.database_grid.setter("height"))
+        self.database_scroll.add_widget(self.database_grid)
+        overview.add_widget(self.database_scroll)
+
+        button_row = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(10))
+        button_row.add_widget(self.action_button("Refresh Databases", self.root_widget.refresh_database_lists))
+        button_row.add_widget(self.action_button("Refresh Tables", self.root_widget.refresh_table_lists))
+        overview.add_widget(button_row)
+        self.content.add_widget(overview)
+
         guide = self.section_card("Quick Guide")
         guide.add_widget(
             Label(
                 text=(
                     "Use the DDL tab to create databases and tables, the DML tab to insert/update/delete rows, "
-                    "and the SQL tab for custom queries. Table definitions accept raw SQL column definitions, "
-                    "for example: id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL."
+                    "and the SQL tab for custom queries. The table builder in DDL lets you create columns using "
+                    "drop-down selections for data type, nullability, and key behavior."
                 ),
                 color=MUTED,
                 halign="left",
@@ -294,6 +338,18 @@ class DashboardScreen(BaseScreen):
         )
         self.content.add_widget(guide)
 
+    def refresh_databases(self, database_names: list[str], active_database: str | None):
+        active_text = active_database if active_database else "(server-level connection)"
+        self.active_database_label.text = f"Active database: {active_text}"
+        self.database_grid.clear_widgets()
+        if not database_names:
+            self.database_grid.add_widget(CellLabel("No databases found."))
+            return
+
+        for name in database_names:
+            marker = " [active]" if active_database and name == active_database else ""
+            self.database_grid.add_widget(CellLabel(f"{name}{marker}"))
+
     def connect(self, *_args):
         self.root_widget.connect_to_database(
             host=self.host_field.text,
@@ -301,6 +357,103 @@ class DashboardScreen(BaseScreen):
             password=self.password_field.text,
             database=self.database_field.text,
         )
+
+
+class ColumnFormRow(Card):
+    def __init__(self, on_remove, **kwargs):
+        super().__init__(orientation="vertical", background_color=PANEL_DEEP, **kwargs)
+        self.on_remove = on_remove
+
+        top = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(8))
+        self.column_name = TextInput(
+            hint_text="Column name",
+            multiline=False,
+            background_color=PANEL_ALT,
+            foreground_color=TEXT,
+            cursor_color=ACCENT,
+        )
+        self.data_type = Spinner(text="VARCHAR", values=TYPE_OPTIONS, size_hint_x=0.42)
+        self.size_value = TextInput(
+            hint_text="Size (optional)",
+            multiline=False,
+            background_color=PANEL_ALT,
+            foreground_color=TEXT,
+            cursor_color=ACCENT,
+            size_hint_x=0.36,
+        )
+        remove_button = Button(
+            text="Remove",
+            size_hint_x=0.22,
+            background_normal="",
+            background_color=(0.78, 0.25, 0.31, 1),
+            color=TEXT,
+            bold=True,
+        )
+        remove_button.bind(on_release=self._remove)
+
+        top.add_widget(self.column_name)
+        top.add_widget(self.data_type)
+        top.add_widget(self.size_value)
+        top.add_widget(remove_button)
+
+        bottom = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(8))
+        self.null_mode = Spinner(text="NOT NULL", values=("NOT NULL", "NULL"), size_hint_x=0.30)
+        self.key_mode = Spinner(text="NONE", values=("NONE", "PRIMARY KEY", "UNIQUE"), size_hint_x=0.30)
+        self.extra_mode = Spinner(text="NONE", values=("NONE", "AUTO_INCREMENT"), size_hint_x=0.30)
+        self.default_value = TextInput(
+            hint_text="Default (optional)",
+            multiline=False,
+            background_color=PANEL_ALT,
+            foreground_color=TEXT,
+            cursor_color=ACCENT,
+            size_hint_x=0.42,
+        )
+
+        bottom.add_widget(self.null_mode)
+        bottom.add_widget(self.key_mode)
+        bottom.add_widget(self.extra_mode)
+        bottom.add_widget(self.default_value)
+
+        self.add_widget(top)
+        self.add_widget(bottom)
+
+    def _remove(self, *_args):
+        self.on_remove(self)
+
+    def to_sql_fragment(self):
+        name = self.column_name.text.strip()
+        data_type = self.data_type.text.strip().upper()
+        size = self.size_value.text.strip()
+        null_mode = self.null_mode.text.strip().upper()
+        key_mode = self.key_mode.text.strip().upper()
+        extra_mode = self.extra_mode.text.strip().upper()
+        default_value = self.default_value.text.strip()
+
+        if not name:
+            raise ValueError("Each column needs a name.")
+        if not IDENTIFIER_RE.match(name):
+            raise ValueError(f"Invalid column name: {name}")
+
+        parts = [f"`{name}`", data_type]
+        if size:
+            parts[-1] = f"{data_type}({size})"
+        elif data_type in SIZE_RECOMMENDED_TYPES:
+            raise ValueError(f"Column '{name}' should include a size for {data_type}.")
+
+        parts.append(null_mode)
+        if key_mode != "NONE":
+            parts.append(key_mode)
+        if extra_mode != "NONE":
+            parts.append(extra_mode)
+
+        if default_value:
+            if default_value.upper().startswith("CURRENT_") or default_value.isdigit():
+                parts.append(f"DEFAULT {default_value}")
+            else:
+                escaped = default_value.replace("'", "''")
+                parts.append(f"DEFAULT '{escaped}'")
+
+        return " ".join(parts)
 
 
 class DDLScreen(BaseScreen):
@@ -313,18 +466,26 @@ class DDLScreen(BaseScreen):
         create_db.add_widget(self.action_button("Create Database", self.create_database))
         self.content.add_widget(create_db)
 
-        create_table_card = self.section_card("Create Table", "Enter the table name and raw SQL column definitions.")
+        create_table_card = self.section_card("Create Table", "Build table columns using dropdowns and structured inputs.")
         table_section, self.table_name_field = create_field("Table name", "customers")
-        definition_section, self.columns_field = create_field(
-            "Column definitions",
-            "id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL",
-            multiline=True,
-            height=120,
-        )
+        self.column_rows: list[ColumnFormRow] = []
+        self.columns_host = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        self.columns_host.bind(minimum_height=self.columns_host.setter("height"))
+        self.columns_scroll = ScrollView(do_scroll_x=False, do_scroll_y=True, size_hint_y=None, height=dp(280))
+        self.columns_scroll.add_widget(self.columns_host)
+
+        button_row = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(10))
+        button_row.add_widget(self.action_button("Add Column", self.add_column_row))
+        button_row.add_widget(self.action_button("Reset Columns", self.reset_columns))
+
         create_table_card.add_widget(table_section)
-        create_table_card.add_widget(definition_section)
+        create_table_card.add_widget(button_row)
+        create_table_card.add_widget(self.columns_scroll)
         create_table_card.add_widget(self.action_button("Create Table", self.create_table))
         self.content.add_widget(create_table_card)
+
+        self.add_column_row()
+        self.add_column_row()
 
         drop_card = self.section_card("Drop Table", "Remove a table from the current database.")
         self.drop_spinner = Spinner(text="Select table", values=(), size_hint_y=None, height=dp(42))
@@ -343,8 +504,26 @@ class DDLScreen(BaseScreen):
     def create_database(self, *_args):
         self.root_widget.create_database_action(self.database_name_field.text)
 
+    def add_column_row(self, *_args):
+        row = ColumnFormRow(self.remove_column_row)
+        self.column_rows.append(row)
+        self.columns_host.add_widget(row)
+
+    def remove_column_row(self, row: ColumnFormRow):
+        if len(self.column_rows) <= 1:
+            self.root_widget.report_error("Table form", "At least one column is required.")
+            return
+        self.column_rows.remove(row)
+        self.columns_host.remove_widget(row)
+
+    def reset_columns(self, *_args):
+        self.columns_host.clear_widgets()
+        self.column_rows = []
+        self.add_column_row()
+        self.add_column_row()
+
     def create_table(self, *_args):
-        self.root_widget.create_table_action(self.table_name_field.text, self.columns_field.text)
+        self.root_widget.create_table_from_form_action(self.table_name_field.text, self.column_rows)
 
     def drop_selected_table(self, *_args):
         self.root_widget.drop_table_action(self.drop_spinner.text)
@@ -489,6 +668,8 @@ class SQLWorkbenchRoot(BoxLayout):
         super().__init__(orientation="vertical", spacing=dp(14), padding=dp(16), **kwargs)
         Window.clearcolor = BG
         self.connection = None
+        self.database_names: list[str] = []
+        self.active_database = None
         self.table_names: list[str] = []
         self.status_text = "Ready. Connect to a local MariaDB server."
 
@@ -606,6 +787,7 @@ class SQLWorkbenchRoot(BoxLayout):
         self.add_widget(self.status_bar)
 
         Clock.schedule_once(lambda *_args: self.refresh_table_lists(), 0)
+        Clock.schedule_once(lambda *_args: self.refresh_database_lists(), 0)
 
     def _sidebar_button(self, text: str, callback):
         button = SidebarButton(text=text)
@@ -658,14 +840,39 @@ class SQLWorkbenchRoot(BoxLayout):
 
         try:
             self.connection = get_connection(host=host, user=user, password=password, database=database)
+            self.active_database = self._get_active_database()
             self.set_connection_chip(f"Connected: {database or 'server'}")
             self.set_status(f"Connected to {host or 'localhost'} as {user or 'root'}.")
+            self.refresh_database_lists()
             self.refresh_table_lists()
             self.result_panel.show_message("Connection established successfully.")
         except mariadb.Error as exc:
             self.connection = None
+            self.active_database = None
             self.set_connection_chip("Disconnected", color=ERROR)
             self.report_error("Connection failed", exc)
+
+    def _get_active_database(self):
+        if self.connection is None:
+            return None
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT DATABASE()")
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+    def refresh_database_lists(self, *_args):
+        if self.connection is None:
+            self.database_names = []
+            self.active_database = None
+            self.dashboard_screen.refresh_databases([], None)
+            return
+
+        try:
+            self.database_names = list_databases(connection=self.connection)
+            self.active_database = self._get_active_database()
+            self.dashboard_screen.refresh_databases(self.database_names, self.active_database)
+        except mariadb.Error as exc:
+            self.report_error("Could not load databases", exc)
 
     def refresh_table_lists(self, *_args):
         if self.connection is None:
@@ -693,10 +900,17 @@ class SQLWorkbenchRoot(BoxLayout):
             if not database_name:
                 raise ValueError("Database name is required.")
             create_database(database_name, connection=self.connection)
+            self.refresh_database_lists()
             self.set_status(f"Database '{database_name}' is ready.")
             self.result_panel.show_message(f"Database '{database_name}' was created or already existed.")
         except (RuntimeError, ValueError, mariadb.Error) as exc:
             self.report_error("Create database failed", exc)
+
+    def create_table_from_form_action(self, table_name: str, column_rows: list[ColumnFormRow]):
+        column_sql_parts = []
+        for row in column_rows:
+            column_sql_parts.append(row.to_sql_fragment())
+        self.create_table_action(table_name, ", ".join(column_sql_parts))
 
     def create_table_action(self, table_name: str, columns_definition: str):
         try:
